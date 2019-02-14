@@ -148,6 +148,19 @@ usage() {
 
 }
 
+# $1: string
+debuglog() {
+    if [ -n "${DEBUG}" ] ; then
+        echo "[DBG] ${1}" >&2
+    fi
+}
+# $1: string
+verboselog() {
+    if [ -n "${VERBOSE}" ] ; then
+        echo "${1}" >&2
+    fi
+}
+
 ################################################################################
 # trap passing the signal name
 # see https://stackoverflow.com/questions/2175647/is-it-possible-to-detect-which-trap-signal-in-bash/2175751#2175751
@@ -162,11 +175,9 @@ trap_with_arg() {
 ################################################################################
 # Cleanup temporary files
 remove_temporary_files() {
-    if [ -n "${DEBUG}" ] ; then
-        echo "[DBG] cleaning up temporary files"
-        # shellcheck disable=SC2086
-        echo $TEMPORARY_FILES | tr '\ ' '\n' | sed 's/^/[DBG]   /'
-    fi
+    debuglog "cleaning up temporary files"
+    debuglog "$(echo $TEMPORARY_FILES | tr '\ ' '\n')"
+
     # shellcheck disable=SC2086
     if [ -n "$TEMPORARY_FILES" ]; then
         rm -f $TEMPORARY_FILES
@@ -177,9 +188,8 @@ remove_temporary_files() {
 # Cleanup when exiting
 cleanup() {
     SIGNAL=$1
-    if [ -n "${DEBUG}" ] ; then
-        echo "[DBG] signal caught $SIGNAL"
-    fi
+    debuglog "signal caught $SIGNAL"
+
     remove_temporary_files
     # shellcheck disable=SC2086
     trap - $SIGNALS
@@ -194,9 +204,7 @@ create_temporary_file() {
         unknown 'temporary file creation failure.'
     fi
 
-    if [ -n "${DEBUG}" ] ; then
-        echo "[DBG] temporary file $TEMPFILE created"
-    fi
+    debuglog "temporary file $TEMPFILE created"
 
     # add the file to the list of temporary files
     TEMPORARY_FILES="$TEMPORARY_FILES $TEMPFILE"
@@ -268,15 +276,11 @@ exec_with_timeout() {
     # (spawn accepts one command)
     command="/bin/sh -c \"$2\""
 
-    if [ -n "${DEBUG}" ] ; then
-        echo "[DBG] executing with timeout (${time}s): $2"
-    fi
+    debuglog "executing with timeout (${time}s): $2"
 
     if [ -n "${TIMEOUT_BIN}" ] ; then
 
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG]   ${TIMEOUT_BIN} $time $command"
-        fi
+        debuglog "${TIMEOUT_BIN} $time $command"
 
         eval "${TIMEOUT_BIN} $time $command" > /dev/null 2>&1
 
@@ -286,17 +290,13 @@ exec_with_timeout() {
 
     elif [ -n "${EXPECT}" ] ; then
 
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG]   expect -c \"set echo \\\"-noecho\\\"; set timeout $time; spawn -noecho $command; expect timeout { exit 1 } eof { exit 0 }\""
-        fi
+        debuglog "expect -c \"set echo \\\"-noecho\\\"; set timeout $time; spawn -noecho $command; expect timeout { exit 1 } eof { exit 0 }\""
 
         expect -c "set echo \"-noecho\"; set timeout $time; spawn -noecho $command; expect timeout { exit 1 } eof { exit 0 }"
 
         RET=$?
 
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG]   expect returned ${RET}"
-        fi
+        debuglog "expect returned ${RET}"
 
         if [ "${RET}" -eq 1 ] ; then
             critical "Timeout after ${time} seconds"
@@ -402,27 +402,17 @@ fetch_certificate() {
 
     # IPv6 addresses need brackets in a URI
     if [ "${HOST}" != "${HOST#*[0-9].[0-9]}" ]; then
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] ${HOST} is an IPv4 address"
-        fi
+       debuglog "${HOST} is an IPv4 address"
     elif [ "${HOST}" != "${HOST#*:[0-9a-fA-F]}" ]; then
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] ${HOST} is an IPv6 address"
-        fi
-        if [ -z "${HOST##*\[*}" ] ; then
-            if [ -n "${DEBUG}" ] ; then
-               echo "[DBG] ${HOST} is already specified with brakcets"
-            fi
-        else
-            if [ -n "${DEBUG}" ] ; then
-               echo "[DBG] adding brackets to ${HOST}"
-            fi
-            HOST="[${HOST}]"
-        fi
-    else
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] ${HOST} is not an IP address"
+       debuglog "${HOST} is an IPv6 address"
+       if [ -z "${HOST##*\[*}" ] ; then
+           debuglog "${HOST} is already specified with brackets"
+       else
+           debuglog "adding brackets to ${HOST}"
+           HOST="[${HOST}]"
        fi
+    else
+       debuglog "${HOST} is not an IP address"
     fi
 
     # Check if a protocol was specified (if not HTTP switch to TLS)
@@ -471,26 +461,22 @@ fetch_certificate() {
     fi
 
     if [ -n "${DEBUG}" ] ; then
-        echo "[DBG] storing a copy of the retrieved certificate in ${HOST}.crt"
+        debuglog "storing a copy of the retrieved certificate in ${HOST}.crt"
         cp "${CERT}" "${HOST}.crt"
 
-        echo "[DBG] storing a copy of the OpenSSL errors in ${HOST}.error"
+        debuglog "storing a copy of the OpenSSL errors in ${HOST}.error"
         cp "${ERROR}" "${HOST}.error"
 
     fi
 
     if [ "${RET}" -ne 0 ] ; then
 
-        if [ -n "${DEBUG}" ] ; then
-            sed 's/^/[DBG] SSL error: /' "${ERROR}"
-        fi
+        debuglog "$(sed 's/^/SSL error: /' "${ERROR}")"
 
         # s_client could verify the server certificate because the server requires a client certificate
         if grep -q '^Acceptable client certificate CA names' "${CERT}" ; then
 
-            if [ -n "${VERBOSE}" ] ; then
-                echo "The server requires a client certificate"
-            fi
+            verboselog "The server requires a client certificate"
 
         else
 
@@ -837,7 +823,7 @@ main() {
             -p|--port)
                 if [ $# -gt 1 ]; then
                     PORT="$2"
-            XMPPPORT="$2"
+                    XMPPPORT="$2"
                     shift 2
                 else
                     unknown "-p,--port requires an argument"
@@ -924,8 +910,11 @@ main() {
                     else
                         unknown "invalid argument for --ssl"
                     fi
+
                 else
+
                     unknown "--ssl requires an argument"
+
                 fi
                 ;;
             -t|--timeout)
@@ -1118,9 +1107,7 @@ main() {
         fi
     fi
 
-    if [ -n "${DEBUG}" ] ; then
-        echo "[DBG] ROOT_CA = ${ROOT_CA}"
-    fi
+    debuglog "ROOT_CA = ${ROOT_CA}"
 
     #######################
     # Check needed programs
@@ -1140,60 +1127,48 @@ main() {
     # curl
     if [ -z "${CURL_BIN}" ] ; then
         if [ -n "${SSL_LAB_CRIT_ASSESSMENT}" ] || [ -n "${OCSP}" ] ; then
-            if [ -n "${DEBUG}" ] ; then
-                echo "[DBG] cURL binary needed. SSL Labs = ${SSL_LAB_CRIT_ASSESSMENT}, OCSP = ${OCSP}"
-                echo "[DBG] cURL binary not specified"
-            fi
+            debuglog "cURL binary needed. SSL Labs = ${SSL_LAB_ASSESSMENT}, OCSP = ${OCSP}"
+            debuglog "cURL binary not specified"
             check_required_prog curl
             CURL_BIN=$PROG
-            if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] cURL available: ${CURL_BIN}"
-            fi
+            debuglog "cURL available: ${CURL_BIN}"
         else
-            if [ -n "${DEBUG}" ] ; then
-                echo "[DBG] cURL binary not needed. SSL Labs = ${SSL_LAB_CRIT_ASSESSMENT}, OCSP = ${OCSP}"
-            fi
+            debuglog "cURL binary not needed. SSL Labs = ${SSL_LAB_ASSESSMENT}, OCSP = ${OCSP}"
         fi
     fi
 
     # Expect (optional)
     EXPECT="$(command -v expect 2> /dev/null)"
     test -x "${EXPECT}" || EXPECT=""
-    if [  -n "${VERBOSE}" ] ; then
-        if [ -z "${EXPECT}" ] ; then
-            echo "expect not available"
-        else
-            echo "expect available (${EXPECT})"
-        fi
+    if [ -z "${EXPECT}" ] ; then
+        verboselog "expect not available"
+    else
+        verboselog "expect available (${EXPECT})"
     fi
 
     # Timeout (optional)
     TIMEOUT_BIN="$(command -v timeout 2> /dev/null)"
     test -x "${TIMEOUT_BIN}" || TIMEOUT_BIN=""
-    if [  -n "${VERBOSE}" ] ; then
-
-        if [ -z "${TIMEOUT_BIN}" ] ; then
-            echo "timeout not available"
-        else
-            echo "timeout available (${TIMEOUT_BIN})"
-        fi
-
+    if [ -z "${TIMEOUT_BIN}" ] ; then
+        verboselog "timeout not available"
+    else
+        verboselog "timeout available (${TIMEOUT_BIN})"
     fi
 
-    if [ -z "${TIMEOUT_BIN}" ] && [ -z "${EXPECT}" ] && [ -n "${VERBOSE}" ] ; then
-        echo "disabling timeouts"
+    if [ -z "${TIMEOUT_BIN}" ] && [ -z "${EXPECT}" ] ; then
+        verboselog "disabling timeouts"
     fi
 
     PERL="$(command -v perl 2> /dev/null)"
 
-    if [ -n "${DEBUG}" ] && [ -n "${PERL}" ] ; then
-        echo "[DBG] perl available: ${PERL}"
+    if [ -n "${PERL}" ] ; then
+        debuglog "perl available: ${PERL}"
     fi
 
     DATEBIN="$(command -v date 2> /dev/null)"
 
-    if [ -n "${DEBUG}" ] && [ -n "${DATEBIN}" ] ; then
-        echo "[DBG] date available: ${DATEBIN}"
+    if [ -n "${DATEBIN}" ] ; then
+        debuglog "date available: ${DATEBIN}"
     fi
 
     DATETYPE=""
@@ -1202,23 +1177,19 @@ main() {
 
         # Perl with Date::Parse (optional)
         test -x "${PERL}" || PERL=""
-        if [ -z "${PERL}" ] && [ -n "${VERBOSE}" ] ; then
-            echo "Perl not found: disabling date computations"
+        if [ -z "${PERL}" ] ; then
+            verboselog "Perl not found: disabling date computations"
         fi
 
         if ! ${PERL} -e "use Date::Parse;" > /dev/null 2>&1 ; then
 
-            if [ -n "${VERBOSE}" ] ; then
-                echo "Perl module Date::Parse not installed: disabling date computations"
-            fi
+            verboselog "Perl module Date::Parse not installed: disabling date computations"
 
             PERL=""
 
         else
 
-            if [ -n "${VERBOSE}" ] ; then
-                echo "Perl module Date::Parse installed: enabling date computations"
-            fi
+            verboselog "Perl module Date::Parse installed: enabling date computations"
 
             DATETYPE="PERL"
 
@@ -1232,9 +1203,7 @@ main() {
             DATETYPE="BSD"
         fi
 
-        if [ -n "${VERBOSE}" ] ; then
-            echo "found ${DATETYPE} date with timestamp support: enabling date computations"
-        fi
+        verboselog "found ${DATETYPE} date with timestamp support: enabling date computations"
 
     fi
 
@@ -1243,13 +1212,13 @@ main() {
     fi
 
     if [ -n "${DEBUG}" ] ; then
-        echo "[DBG] check_ssl_cert version: ${VERSION}"
-        echo "[DBG] OpenSSL binary: ${OPENSSL}"
-        echo "[DBG] OpenSSL version: $( ${OPENSSL} version )"
+        debuglog "check_ssl_cert version: ${VERSION}"
+        debuglog "OpenSSL binary: ${OPENSSL}"
+        debuglog "OpenSSL version: $( ${OPENSSL} version )"
 
         OPENSSL_DIR="$( ${OPENSSL} version -d | sed -E 's/OPENSSLDIR: "([^"]*)"/\1/' )"
 
-        echo "[DBG] OpenSSL configuration directory: ${OPENSSL_DIR}"
+        debuglog "OpenSSL configuration directory: ${OPENSSL_DIR}"
 
         DEFAULT_CA=0
         if [ -f "${OPENSSL_DIR}"/cert.pem ] ; then
@@ -1257,10 +1226,10 @@ main() {
         elif [ -f "${OPENSSL_DIR}"/certs ] ; then
             DEFAULT_CA="$( grep -c BEGIN "${OPENSSL_DIR}"/certs )"
         fi
-        echo "[DBG] ${DEFAULT_CA} root certificates installed by default"
+        debuglog "${DEFAULT_CA} root certificates installed by default"
 
-        echo "[DBG] System info: $( uname -a )"
-        echo "[DBG] Date computation: ${DATETYPE}"
+        debuglog "System info: $( uname -a )"
+        debuglog "Date computation: ${DATETYPE}"
     fi
 
     ################################################################################
@@ -1280,15 +1249,11 @@ main() {
             SERVERNAME="-servername ${HOST}"
         fi
 
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] '${OPENSSL} s_client' supports '-servername': using ${SERVERNAME}"
-        fi
+        debuglog "'${OPENSSL} s_client' supports '-servername': using ${SERVERNAME}"
 
     else
 
-        if [ -n "${VERBOSE}" ] ; then
-            echo "'${OPENSSL} s_client' does not support '-servername': disabling virtual server support"
-        fi
+        verboselog "'${OPENSSL} s_client' does not support '-servername': disabling virtual server support"
 
     fi
 
@@ -1299,9 +1264,7 @@ main() {
 
         XMPPHOST="-xmpphost ${XMPPHOST:-$HOST}"
 
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] '${OPENSSL} s_client' supports '-xmpphost': using ${XMPPHOST}"
-        fi
+        debuglog "'${OPENSSL} s_client' supports '-xmpphost': using ${XMPPHOST}"
 
     else
 
@@ -1311,9 +1274,7 @@ main() {
 
         XMPPHOST=
 
-        if [ -n "${VERBOSE}" ] ; then
-            echo "'${OPENSSL} s_client' does not support '-xmpphost': disabling 'to' attribute"
-        fi
+        verboselog "'${OPENSSL} s_client' does not support '-xmpphost': disabling 'to' attribute"
 
     fi
 
@@ -1353,9 +1314,7 @@ main() {
         create_temporary_file; OCSP_RESPONSE_TMP=$TEMPFILE
     fi
 
-    if [ -n "${VERBOSE}" ] ; then
-        echo "downloading certificate to ${TMPDIR}"
-    fi
+    verboselog "downloading certificate to ${TMPDIR}"
 
     CLIENT=""
     if [ -n "${CLIENT_CERT}" ] ; then
@@ -1383,9 +1342,7 @@ main() {
 
             # Some OpenSSL versions have problems with the -servername option
             # We try without
-            if [ -n "${VERBOSE}" ] ; then
-                echo "'${OPENSSL} s_client' returned an error: trying without '-servername'"
-            fi
+            verboselog "'${OPENSSL} s_client' returned an error: trying without '-servername'"
 
             SERVERNAME=""
             fetch_certificate
@@ -1414,9 +1371,8 @@ main() {
                 if [ -r "${FILE}" ] ; then
 
                     if "${OPENSSL}" crl -in "${CERT}" -inform DER | grep -q "BEGIN X509 CRL" ; then
-                        if [ -n "${VERBOSE}" ] ; then
-                            echo "File is DER encoded CRL"
-                        fi
+                        debuglog "File is DER encoded CRL"
+
                         OPENSSL_COMMAND="crl"
                         OPENSSL_PARAMS="-inform DER -nameopt utf8,oneline,-esc_msb"
                         OPENSSL_ENDDATE_OPTION="-nextupdate"
@@ -1440,9 +1396,7 @@ main() {
                 # - finally the substitution replaces every newline with a space on
                 #   the pattern space
                 ERROR_MESSAGE="$(sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/; /g' "${ERROR}")"
-                if [ -n "${VERBOSE}" ] ; then
-                    echo "Error: ${ERROR_MESSAGE}"
-                fi
+                verboselog "Error: ${ERROR_MESSAGE}"
                 critical "No certificate returned"
             fi
         else
@@ -1454,9 +1408,7 @@ main() {
 
     fi
 
-    if [ -n "${VERBOSE}" ] ; then
-        echo "parsing the ${OPENSSL_COMMAND} certificate file"
-    fi
+    verboselog "parsing the ${OPENSSL_COMMAND} certificate file"
 
     ################################################################################
     # Parse the X.509 certificate or crl
@@ -1522,41 +1474,29 @@ main() {
     # TODO: should be checked
     # shellcheck disable=SC2021
     if [ -z "${ISSUER_URI}" ] ; then
-        if [ -n "${VERBOSE}" ] ; then
-            echo "cannot find the CA Issuers in the certificate: disabling OCSP checks"
-        fi
+        verboselog "cannot find the CA Issuers in the certificate: disabling OCSP checks"
         OCSP=""
     elif [ "${ISSUER_URI}" != "$(echo "${ISSUER_URI}" | tr -d '[[:space:]]')" ]; then
-        if [ -n "${VERBOSE}" ] ; then
-            echo "unable to fetch the CA issuer certificate (spaces in URI)"
-        fi
+        verboselog "unable to fetch the CA issuer certificate (spaces in URI)"
         OCSP=""
     elif ! echo "${ISSUER_URI}" | grep -qi '^http' ; then
-        if [ -n "${VERBOSE}" ] ; then
-            echo "unable to fetch the CA issuer certificate (unsupported protocol)"
-        fi
+        verboselog "unable to fetch the CA issuer certificate (unsupported protocol)"
         OCSP=""
     fi
 
     # Check OCSP stapling
     if [ -n "${REQUIRE_OCSP_STAPLING}" ] ; then
 
-        if [ -n "${VERBOSE}" ] ; then
-            echo "checking OCSP stapling"
-        fi
+        verboselog "checking OCSP stapling"
 
         exec_with_timeout "$TIMEOUT" "printf '${HTTP_REQUEST}' | openssl s_client -connect ${HOST}:${PORT} ${SERVERNAME} -status 2> /dev/null | grep -A 17 'OCSP response:' > $OCSP_RESPONSE_TMP"
 
-        if [ -n "${DEBUG}" ] ; then
-            sed 's/^/[DBG]\ /' "${OCSP_RESPONSE_TMP}"
-        fi
+        debuglog "${OCSP_RESPONSE_TMP}"
 
         if ! grep -q 'Next Update' "${OCSP_RESPONSE_TMP}" ; then
             critical "OCSP stapling not enabled"
         else
-            if [ -n "${VERBOSE}" ] ; then
-                echo "  OCSP stapling enabled"
-            fi
+            verboselog "  OCSP stapling enabled"
         fi
 
     fi
@@ -1565,26 +1505,24 @@ main() {
     SIGNATURE_ALGORITHM="$($OPENSSL "${OPENSSL_COMMAND}" ${OPENSSL_PARAMS} -in "${CERT}" -text -noout | grep 'Signature Algorithm' | head -n 1)"
 
     if [ -n "${DEBUG}" ] ; then
-        echo "[DBG] ${SUBJECT}"
-        echo "[DBG] CN         = ${CN}"
+        debuglog "${SUBJECT}"
+        debuglog "CN         = ${CN}"
         # shellcheck disable=SC2162
         echo "$ISSUERS" | while read LINE; do
-            echo "[DBG] CA         = ${LINE}"
+            debuglog "CA         = ${LINE}"
         done
-        echo "[DBG] SERIAL     = ${SERIAL}"
-        echo "[DBG] FINGERPRINT= ${FINGERPRINT}"
-        echo "[DBG] OCSP_URI   = ${OCSP_URI}"
-        echo "[DBG] ISSUER_URI = ${ISSUER_URI}"
-        echo "[DBG] ${SIGNATURE_ALGORITHM}"
+        debuglog "SERIAL     = ${SERIAL}"
+        debuglog "FINGERPRINT= ${FINGERPRINT}"
+        debuglog "OCSP_URI   = ${OCSP_URI}"
+        debuglog "ISSUER_URI = ${ISSUER_URI}"
+        debuglog "${SIGNATURE_ALGORITHM}"
     fi
 
     if echo "${SIGNATURE_ALGORITHM}" | grep -q "sha1" ; then
 
         if [ -n "${NOSIGALG}" ] ; then
 
-            if [ -n "${VERBOSE}" ] ; then
-                echo "${OPENSSL_COMMAND} Certificate is signed with SHA-1"
-            fi
+            verboselog "${OPENSSL_COMMAND} Certificate is signed with SHA-1"
 
         else
 
@@ -1598,9 +1536,7 @@ main() {
 
         if [ -n "${NOSIGALG}" ] ; then
 
-            if [ -n "${VERBOSE}" ] ; then
-                echo "${OPENSSL_COMMAND} Certificate is signed with MD5"
-            fi
+            verboselog "${OPENSSL_COMMAND} Certificate is signed with MD5"
 
         else
 
@@ -1619,7 +1555,7 @@ main() {
             if ! echo "${VALID_ATTRIBUTES}" | grep -q ",${ATTR}," ; then
                 unknown "Invalid certificate attribute: ${ATTR}"
             else
-        # shellcheck disable=SC2086
+                # shellcheck disable=SC2086
                 value="$(${OPENSSL} "${OPENSSL_COMMAND}" ${OPENSSL_PARAMS} -in "${CERT}" -noout -nameopt utf8,oneline,-esc_msb  -"${ATTR}" | sed -e "s/.*=//")"
                 LONG_OUTPUT="${LONG_OUTPUT}\\n${ATTR}: ${value}"
             fi
@@ -1705,9 +1641,9 @@ EOF
            sed -e "s/,//g" |
            sed -e "s/^\\ *//"
         )
-    if [ -n "${DEBUG}" ] ; then
-        echo "[DBG] subjectAlternativeName = ${SUBJECT_ALTERNATIVE_NAME}"
-    fi
+
+    debuglog "subjectAlternativeName = ${SUBJECT_ALTERNATIVE_NAME}"
+
     if [ -n "${REQUIRE_SAN}" ] && [ -z "${SUBJECT_ALTERNATIVE_NAME}" ] && [ ${OPENSSL_COMMAND} != "crl" ] ; then
         critical "The certificate for this site does not contain a Subject Alternative Name extension containing a domain name or IP address."
     fi
@@ -1718,46 +1654,35 @@ EOF
 
         ok=""
 
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] check CN: ${CN}"
-        fi
+        debuglog "check CN: ${CN}"
 
         # Common name is case insensitive: using grep for comparison (and not 'case' with 'shopt -s nocasematch' as not defined in POSIX
 
         if echo "${CN}" | grep -q -i "^\\*\\." ; then
 
             # Match the domain
-            if [ -n "${DEBUG}" ] ; then
-                echo "[DBG] the common name ${CN} begins with a '*'"
-                echo "[DBG] checking if the common name matches ^$(echo "${CN}" | cut -c 3-)\$"
-            fi
+            debuglog "the common name ${CN} begins with a '*'"
+            debuglog "checking if the common name matches ^$(echo "${CN}" | cut -c 3-)\$"
+
             if echo "${COMMON_NAME}" | grep -q -i "^$(echo "${CN}" | cut -c 3-)\$" ; then
-                if [ -n "${DEBUG}" ] ; then
-                    echo "[DBG] the common name ${COMMON_NAME} matches ^$( echo "${CN}" | cut -c 3- )\$"
-                fi
+                debuglog "the common name ${COMMON_NAME} matches ^$( echo "${CN}" | cut -c 3- )\$"
                 ok="true"
 
             fi
 
             # Or the literal with the wildcard
-            if [ -n "${DEBUG}" ] ; then
-                echo "[DBG] checking if the common name matches ^$(echo "${CN}" | sed -e 's/[.]/[.]/g' -e 's/[*]/[A-Za-z0-9\-]*/' )\$"
-            fi
+            debuglog "checking if the common name matches ^$(echo "${CN}" | sed -e 's/[.]/[.]/g' -e 's/[*]/[A-Za-z0-9\-]*/' )\$"
+
             if echo "${COMMON_NAME}" | grep -q -i "^$(echo "${CN}" | sed -e 's/[.]/[.]/g' -e 's/[*]/[A-Za-z0-9\-]*/' )\$" ; then
-                if [ -n "${DEBUG}" ] ; then
-                    echo "[DBG] the common name ${COMMON_NAME} matches ^$(echo "${CN}" | sed -e 's/[.]/[.]/g' -e 's/[*]/[A-Za-z0-9\-]*/' )\$"
-                fi
+                debuglog "the common name ${COMMON_NAME} matches ^$(echo "${CN}" | sed -e 's/[.]/[.]/g' -e 's/[*]/[A-Za-z0-9\-]*/' )\$"
                 ok="true"
             fi
 
             # Or if both are exactly the same
-            if [ -n "${DEBUG}" ] ; then
-                echo "[DBG] checking if the common name matches ^${CN}\$"
-            fi
+            debuglog "checking if the common name matches ^${CN}\$"
+
             if echo "${COMMON_NAME}" | grep -q -i "^${CN}\$" ; then
-                if [ -n "${DEBUG}" ] ; then
-                    echo "[DBG] the common name ${COMMON_NAME} matches ^${CN}\$"
-                fi
+                debuglog "the common name ${COMMON_NAME} matches ^${CN}\$"
                 ok="true"
             fi
 
@@ -1776,50 +1701,37 @@ EOF
 
                 ok=""
 
-                if [ -n "${DEBUG}" ] ; then
-                    echo "[DBG] checking altnames against ${cn}"
-                fi
+                debuglog "checking altnames against ${cn}"
 
                 for alt_name in ${SUBJECT_ALTERNATIVE_NAME} ; do
 
-                    if [ -n "${DEBUG}" ] ; then
-                        echo "[DBG] check Altname: ${alt_name}"
-                    fi
+                    debuglog "check Altname: ${alt_name}"
 
                     if echo "${alt_name}" | grep -q -i "^\\*\\." ; then
 
                         # Match the domain
-                        if [ -n "${DEBUG}" ] ; then
-                            echo "[DBG] the altname ${alt_name} begins with a '*'"
-                            echo "[DBG] checking if the common name matches ^$(echo "${alt_name}" | cut -c 3-)\$"
-                        fi
+                        debuglog "the altname ${alt_name} begins with a '*'"
+                        debuglog "checking if the common name matches ^$(echo "${alt_name}" | cut -c 3-)\$"
+
                         if echo "${cn}" | grep -q -i "^$(echo "${alt_name}" | cut -c 3-)\$" ; then
-                            if [ -n "${DEBUG}" ] ; then
-                                echo "[DBG] the common name ${cn} matches ^$( echo "${alt_name}" | cut -c 3- )\$"
-                            fi
+                            debuglog "the common name ${cn} matches ^$( echo "${alt_name}" | cut -c 3- )\$"
                             ok="true"
 
                         fi
 
                         # Or the literal with the wildcard
-                        if [ -n "${DEBUG}" ] ; then
-                            echo "[DBG] checking if the common name matches ^$(echo "${alt_name}" | sed -e 's/[.]/[.]/g' -e 's/[*]/[A-Za-z0-9\-]*/' )\$"
-                        fi
+                        debuglog "checking if the common name matches ^$(echo "${alt_name}" | sed -e 's/[.]/[.]/g' -e 's/[*]/[A-Za-z0-9\-]*/' )\$"
+
                         if echo "${cn}" | grep -q -i "^$(echo "${alt_name}" | sed -e 's/[.]/[.]/g' -e 's/[*]/[A-Za-z0-9\-]*/' )\$" ; then
-                            if [ -n "${DEBUG}" ] ; then
-                                echo "[DBG] the common name ${cn} matches ^$(echo "${alt_name}" | sed -e 's/[.]/[.]/g' -e 's/[*]/[A-Za-z0-9\-]*/' )\$"
-                            fi
+                            debuglog "the common name ${cn} matches ^$(echo "${alt_name}" | sed -e 's/[.]/[.]/g' -e 's/[*]/[A-Za-z0-9\-]*/' )\$"
                             ok="true"
                         fi
 
                         # Or if both are exactly the same
-                        if [ -n "${DEBUG}" ] ; then
-                            echo "[DBG] checking if the common name matches ^${alt_name}\$"
-                        fi
+                        debuglog "checking if the common name matches ^${alt_name}\$"
+
                         if echo "${cn}" | grep -q -i "^${alt_name}\$" ; then
-                            if [ -n "${DEBUG}" ] ; then
-                                echo "[DBG] the common name ${cn} matches ^${alt_name}\$"
-                            fi
+                            debuglog "the common name ${cn} matches ^${alt_name}\$"
                             ok="true"
                         fi
 
@@ -1855,9 +1767,7 @@ EOF
             critical "invalid CN ('$CN' does not match '$COMMON_NAME')"
         fi
 
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] CN check finished"
-        fi
+        debuglog "CN check finished"
 
     fi
 
@@ -1865,9 +1775,7 @@ EOF
     # Check the issuer
     if [ -n "${ISSUER}" ] ; then
 
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] check ISSUER: ${ISSUER}"
-        fi
+        debuglog "check ISSUER: ${ISSUER}"
 
         ok=""
         CA_ISSUER_MATCHED=$(echo "${ISSUERS}" | grep "^${ISSUER}\$" | head -n1)
@@ -1920,9 +1828,7 @@ EOF
     # Check the validity
     if [ -z "${NOEXP}" ] ; then
 
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] Checking expiration date"
-        fi
+        debuglog "Checking expiration date"
 
         if [ ${OPENSSL_COMMAND} = "x509" ]; then
             # x509 certificates (default)
@@ -1984,15 +1890,11 @@ EOF
     # Check SSL Labs
     if [ -n "${SSL_LAB_CRIT_ASSESSMENT}" ] ; then
 
-        if [ -n "${VERBOSE}" ] ; then
-            echo "Checking SSL Labs assessment"
-        fi
+        verboselog "Checking SSL Labs assessment"
 
         while true; do
 
-            if [ -n "${DEBUG}" ] ; then
-                echo "[DBG] executing ${CURL_BIN} --silent \"https://api.ssllabs.com/api/v2/analyze?host=${HOST}${IGNORE_SSL_LABS_CACHE}\""
-            fi
+            debuglog "executing ${CURL_BIN} --silent \"https://api.ssllabs.com/api/v2/analyze?host=${HOST}${IGNORE_SSL_LABS_CACHE}\""
 
             if [ -n "${SNI}" ] ; then
                 JSON="$(${CURL_BIN} --silent "https://api.ssllabs.com/api/v2/analyze?host=${SNI}${IGNORE_SSL_LABS_CACHE}")"
@@ -2004,9 +1906,7 @@ EOF
 
             if [ ${CURL_RETURN_CODE} -ne 0 ] ; then
 
-                if [ -n "${DEBUG}" ] ; then
-                    echo "[DBG] curl returned ${CURL_RETURN_CODE}: ${CURL_BIN} --silent \"https://api.ssllabs.com/api/v2/analyze?host=${HOST}${IGNORE_SSL_LABS_CACHE}\""
-                fi
+                debuglog "curl returned ${CURL_RETURN_CODE}: ${CURL_BIN} --silent \"https://api.ssllabs.com/api/v2/analyze?host=${HOST}${IGNORE_SSL_LABS_CACHE}\""
 
                 unknown "Error checking SSL Labs: curl returned ${CURL_RETURN_CODE}, see 'man curl' for details"
 
@@ -2014,10 +1914,8 @@ EOF
 
             JSON="$(printf '%s' "${JSON}" | tr '\n' ' ' )"
 
-            if [ -n "${DEBUG}" ] ; then
-                echo "[DBG] Checking SSL Labs: ${CURL_BIN} --silent \"https://api.ssllabs.com/api/v2/analyze?host=${HOST}\""
-                echo "[DBG] SSL Labs JSON: ${JSON}"
-            fi
+            debuglog "Checking SSL Labs: ${CURL_BIN} --silent \"https://api.ssllabs.com/api/v2/analyze?host=${HOST}\""
+            debuglog "SSL Labs JSON: ${JSON}"
 
             # We clear the cache only on the first run
             IGNORE_SSL_LABS_CACHE=""
@@ -2025,9 +1923,7 @@ EOF
             SSL_LABS_HOST_STATUS=$(echo "${JSON}" \
                 | sed 's/.*"status":[ ]*"\([^"]*\)".*/\1/')
 
-            if [ -n "${DEBUG}" ] ; then
-                echo "[DBG] SSL Labs status: ${SSL_LABS_HOST_STATUS}"
-            fi
+            debuglog "SSL Labs status: ${SSL_LABS_HOST_STATUS}"
 
             case "${SSL_LABS_HOST_STATUS}" in
                 'ERROR')
@@ -2039,7 +1935,8 @@ EOF
                     if ! echo "${JSON}" | grep -q "grade" ; then
 
                         # Something went wrong
-                        SSL_LABS_STATUS_MESSAGE=$(echo "${JSON}" | sed 's/.*"statusMessage":[ ]*"\([^"]*\)".*/\1/')
+                        SSL_LABS_STATUS_MESSAGE=$(echo "${JSON}" \
+                            | sed 's/.*"statusMessage":[ ]*"\([^"]*\)".*/\1/')
                         critical "SSL Labs error: ${SSL_LABS_STATUS_MESSAGE}"
 
                     else
@@ -2047,13 +1944,9 @@ EOF
                         SSL_LABS_HOST_GRADE=$(echo "${JSON}" \
                             | sed 's/.*"grade":[ ]*"\([^"]*\)".*/\1/')
 
-                        if [ -n "${DEBUG}" ] ; then
-                            echo "[DBG] SSL Labs grade: ${SSL_LABS_HOST_GRADE}"
-                        fi
+                        debuglog "SSL Labs grade: ${SSL_LABS_HOST_GRADE}"
 
-                        if [ -n "${VERBOSE}" ] ; then
-                            echo "SSL Labs grade: ${SSL_LABS_HOST_GRADE}"
-                        fi
+                        verboselog "SSL Labs grade: ${SSL_LABS_HOST_GRADE}"
 
                         convert_ssl_lab_grade "${SSL_LABS_HOST_GRADE}"
                         SSL_LABS_HOST_GRADE_NUMERIC="${NUMERIC_SSL_LAB_GRADE}"
@@ -2069,9 +1962,7 @@ EOF
                             fi
                         fi
 
-                        if [ -n "${DEBUG}" ] ; then
-                            echo "[DBG] SSL Labs grade (converted): ${SSL_LABS_HOST_GRADE_NUMERIC}"
-                        fi
+                        debuglog "SSL Labs grade (converted): ${SSL_LABS_HOST_GRADE_NUMERIC}"
 
                         # We have a result: exit
                         break
@@ -2080,14 +1971,10 @@ EOF
                     ;;
                 'IN_PROGRESS')
                     # Data not yet available: warn and continue
-                    if [ -n "${VERBOSE}" ] ; then
-                        echo "Warning: no cached data by SSL Labs, check initiated"
-                    fi
+                    verboselog "Warning: no cached data by SSL Labs, check initiated"
                     ;;
                 'DNS')
-                    if [ -n "${VERBOSE}" ] ; then
-                        echo 'SSL Labs cannot resolve the domain name'
-                    fi
+                    verboselog "SSL Labs cannot resolve the domain name"
                     ;;
                 *)
                     # Try to extract a message
@@ -2102,9 +1989,7 @@ EOF
             esac
 
             WAIT_TIME=60
-            if [ -n "${VERBOSE}" ] ; then
-                echo "Waiting ${WAIT_TIME} seconds"
-            fi
+            verboselog "Waiting ${WAIT_TIME} seconds"
 
             sleep "${WAIT_TIME}"
 
@@ -2116,9 +2001,7 @@ EOF
     # Check revocation via OCSP
     if [ -n "${OCSP}" ]; then
 
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] Checking revokation via OCSP"
-        fi
+        debuglog "Checking revokation via OCSP"
 
         ISSUER_HASH="$($OPENSSL x509 -in "${CERT}" -noout -issuer_hash)"
 
@@ -2130,16 +2013,14 @@ EOF
 
             if [ -r "${ISSUER_CERT_CACHE}/${ISSUER_HASH}.crt" ]; then
 
-                if [ -n "${DEBUG}" ] ; then
-                    echo "[DBG] Found cached Issuer Certificate: ${ISSUER_CERT_CACHE}/${ISSUER_HASH}.crt"
-                fi
+                debuglog "Found cached Issuer Certificate: ${ISSUER_CERT_CACHE}/${ISSUER_HASH}.crt"
+
                 ISSUER_CERT="${ISSUER_CERT_CACHE}/${ISSUER_HASH}.crt"
 
             else
 
-                if [ -n "${DEBUG}" ] ; then
-                    echo "[DBG] Not found cached Issuer Certificate: ${ISSUER_CERT_CACHE}/${ISSUER_HASH}.crt"
-                fi
+                debuglog "Not found cached Issuer Certificate: ${ISSUER_CERT_CACHE}/${ISSUER_HASH}.crt"
+
 
             fi
 
@@ -2147,26 +2028,18 @@ EOF
 
         if [ -z "${ISSUER_CERT}" ] ; then
 
-            if [ -n "${DEBUG}" ] ; then
-                echo "[DBG] OCSP: fetching issuer certificate ${ISSUER_URI} to ${ISSUER_CERT_TMP}"
-            fi
+            debuglog "OCSP: fetching issuer certificate ${ISSUER_URI} to ${ISSUER_CERT_TMP}"
 
             exec_with_timeout "$TIMEOUT" "${CURL_BIN} --silent --location ${ISSUER_URI} > ${ISSUER_CERT_TMP}"
 
-            if [ -n "${DEBUG}" ] ; then
-
-                echo "[DBG] OCSP: issuer certificate type: $(${FILE_BIN} "${ISSUER_CERT_TMP}" | sed 's/.*://' )"
-
-            fi
+            debuglog "OCSP: issuer certificate type: $(${FILE_BIN} "${ISSUER_CERT_TMP}" | sed 's/.*://' )"
 
             # check the result
             if ! "${FILE_BIN}" "${ISSUER_CERT_TMP}" | grep -E -q ': (ASCII|PEM)' ; then
 
                 if "${FILE_BIN}" "${ISSUER_CERT_TMP}" | grep -q ': data' ; then
 
-                    if [ -n "${DEBUG}" ] ; then
-                        echo "[DBG] OCSP: converting issuer certificate from DER to PEM"
-                    fi
+                    debuglog "OCSP: converting issuer certificate from DER to PEM"
 
                     cp "${ISSUER_CERT_TMP}" "${ISSUER_CERT_TMP2}"
 
@@ -2188,7 +2061,7 @@ EOF
                 # remove everything up to the last slash
                 FILE_NAME=${FILE_NAME##*/}
 
-                echo "[DBG] OCSP: storing a copy of the retrieved issuer certificate to ${FILE_NAME}"
+                debuglog "OCSP: storing a copy of the retrieved issuer certificate to ${FILE_NAME}"
 
                 cp "${ISSUER_CERT_TMP}" "${FILE_NAME}"
             fi
@@ -2200,9 +2073,7 @@ EOF
 
                 fi
 
-                if [ -n "${DEBUG}" ] ; then
-                    echo "[DBG] Storing Issuer Certificate to cache: ${ISSUER_CERT_CACHE}/${ISSUER_HASH}.crt"
-                fi
+                debuglog "Storing Issuer Certificate to cache: ${ISSUER_CERT_CACHE}/${ISSUER_HASH}.crt"
 
                 cp "${ISSUER_CERT_TMP}" "${ISSUER_CERT_CACHE}/${ISSUER_HASH}.crt"
 
@@ -2213,9 +2084,7 @@ EOF
         fi
         OCSP_HOST="$(echo "${OCSP_URI}" | sed -e "s@.*//\\([^/]\\+\\)\\(/.*\\)\\?\$@\\1@g" | sed 's/^http:\/\///' | sed 's/\/.*//' )"
 
-        if [ -n "${DEBUG}" ] ; then
-            echo "[DBG] OCSP: host = ${OCSP_HOST}"
-        fi
+        debuglog "OCSP: host = ${OCSP_HOST}"
 
         if [ -n "${OCSP_HOST}" ] ; then
 
@@ -2226,21 +2095,15 @@ EOF
             # so we check if the major version is greater than 0
             if "${OPENSSL}" version | grep -q '^LibreSSL' || [ "$( ${OPENSSL} version | sed -e 's/OpenSSL \([0-9]\).*/\1/g' )" -gt 0 ] ; then
 
-                if [ -n "${DEBUG}" ] ; then
-                    echo "[DBG] openssl ocsp supports the -header option"
-                fi
+                debuglog "openssl ocsp supports the -header option"
 
                 # the -header option was first accepting key and value separated by space. The newer versions are using key=value
                 KEYVALUE=""
                 if openssl ocsp -help 2>&1 | grep header | grep -q 'key=value' ; then
-                    if [ -n "${DEBUG}" ] ; then
-                        echo "[DBG] openssl ocsp -header requires 'key=value'"
-                    fi
+                    debuglog "openssl ocsp -header requires 'key=value'"
                     KEYVALUE=1
                 else
-                    if [ -n "${DEBUG}" ] ; then
-                        echo "[DBG] openssl ocsp -header requires 'key value'"
-                    fi
+                    debuglog "openssl ocsp -header requires 'key value'"
                 fi
 
                 # http_proxy is sometimes lower- and sometimes uppercase. Programs usually check both
@@ -2252,36 +2115,26 @@ EOF
                 if [ -n "${HTTP_PROXY:-}" ] ; then
 
                     if [ -n "${KEYVALUE}" ] ; then
-                        if [ -n "${DEBUG}" ] ; then
-                            echo "[DBG] executing $OPENSSL ocsp -no_nonce -issuer ${ISSUER_CERT} -cert ${CERT} -host ${HTTP_PROXY#*://} -path ${OCSP_URI} -header HOST=${OCSP_HOST}"
-                        fi
+                        debuglog "executing $OPENSSL ocsp -no_nonce -issuer ${ISSUER_CERT} -cert ${CERT} -host ${HTTP_PROXY#*://} -path ${OCSP_URI} -header HOST=${OCSP_HOST}"
                         OCSP_RESP="$($OPENSSL ocsp -no_nonce -issuer "${ISSUER_CERT}" -cert "${CERT}" -host "${HTTP_PROXY#*://}" -path "${OCSP_URI}" -header HOST="${OCSP_HOST}" 2>&1 )"
                     else
-                        if [ -n "${DEBUG}" ] ; then
-                            echo "[DBG] executing $OPENSSL ocsp -no_nonce -issuer ${ISSUER_CERT} -cert ${CERT} -host ${HTTP_PROXY#*://} -path ${OCSP_URI} -header HOST ${OCSP_HOST}"
-                        fi
+                        debuglog "executing $OPENSSL ocsp -no_nonce -issuer ${ISSUER_CERT} -cert ${CERT} -host ${HTTP_PROXY#*://} -path ${OCSP_URI} -header HOST ${OCSP_HOST}"
                         OCSP_RESP="$($OPENSSL ocsp -no_nonce -issuer "${ISSUER_CERT}" -cert "${CERT}" -host "${HTTP_PROXY#*://}" -path "${OCSP_URI}" -header HOST "${OCSP_HOST}" 2>&1 )"
                     fi
 
                 else
 
                     if [ -n "${KEYVALUE}" ] ; then
-                        if [ -n "${DEBUG}" ] ; then
-                            echo "[DBG] executing $OPENSSL ocsp -no_nonce -issuer ${ISSUER_CERT} -cert ${CERT}  -url ${OCSP_URI} ${OCSP_HEADER} -header HOST=${OCSP_HOST}"
-                        fi
+                        debuglog "executing $OPENSSL ocsp -no_nonce -issuer ${ISSUER_CERT} -cert ${CERT}  -url ${OCSP_URI} ${OCSP_HEADER} -header HOST=${OCSP_HOST}"
                         OCSP_RESP="$($OPENSSL ocsp -no_nonce -issuer "${ISSUER_CERT}" -cert "${CERT}" -url "${OCSP_URI}" -header "HOST=${OCSP_HOST}" 2>&1 )"
                     else
-                        if [ -n "${DEBUG}" ] ; then
-                            echo "[DBG] executing $OPENSSL ocsp -no_nonce -issuer ${ISSUER_CERT} -cert ${CERT}  -url ${OCSP_URI} ${OCSP_HEADER} -header HOST ${OCSP_HOST}"
-                        fi
+                        debuglog "executing $OPENSSL ocsp -no_nonce -issuer ${ISSUER_CERT} -cert ${CERT}  -url ${OCSP_URI} ${OCSP_HEADER} -header HOST ${OCSP_HOST}"
                         OCSP_RESP="$($OPENSSL ocsp -no_nonce -issuer "${ISSUER_CERT}" -cert "${CERT}" -url "${OCSP_URI}" -header HOST "${OCSP_HOST}" 2>&1 )"
                     fi
 
                 fi
 
-                if [ -n "${DEBUG}" ] ; then
-                    echo "${OCSP_RESP}" | sed 's/^/[DBG] OCSP: response = /'
-                fi
+                debuglog "$(echo "${OCSP_RESP}" | sed 's/^/OCSP: response = /')"
 
                 if echo "${OCSP_RESP}" | grep -qi "revoked" ; then
                     critical "certificate is revoked"
@@ -2298,19 +2151,15 @@ EOF
 
             else
 
-            if [ -n "${VERBOSE}" ] ; then
-                echo "openssl ocsp does not support the -header option: disabling OCSP checks"
+                verboselog "openssl ocsp does not support the -header option: disabling OCSP checks"
+
             fi
 
+        else
+
+            verboselog "no OCSP host found: disabling OCSP checks"
+
         fi
-
-    else
-
-        if [ -n "${VERBOSE}" ] ; then
-                echo "no OCSP host found: disabling OCSP checks"
-        fi
-
-    fi
 
     fi
 
@@ -2332,9 +2181,7 @@ EOF
 
         EMAIL=$($OPENSSL x509 -in "${CERT}" -email -noout)
 
-        if [ -n "${VERBOSE}" ] ; then
-            echo "checking email (${ADDR}): ${EMAIL}"
-        fi
+        verboselog "checking email (${ADDR}): ${EMAIL}"
 
         if [ -z "${EMAIL}" ] ; then
             critical "the certificate does not contain an email address"
@@ -2360,9 +2207,7 @@ EOF
 
         else
 
-            if [ -n "${DEBUG}" ] ; then
-                sed 's/^/[DBG] Error: /' "${ERROR}"
-            fi
+            debuglog "$(sed 's/^/Error: /' "${ERROR}")"
 
             # Process errors
             details=$( grep  '^verify\ error:' "${ERROR}" | sed 's/verify\ error:num=[0-9]*://' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/, /g' )
